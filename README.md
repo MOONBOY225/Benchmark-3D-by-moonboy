@@ -7,6 +7,10 @@ Une application web interactive pour tester les performances 3D de votre télép
 - **Benchmark FPS en temps réel** : Mesure les FPS et la performance 3D
 - **Augmentation dynamique** : Le nombre d'objets 3D augmente automatiquement si les FPS sont élevés
 - **Statistiques en direct** : Affiche FPS, nombre d'objets et mémoire utilisée
+- **Historique local** : Conserve les 20 derniers résultats et permet de les comparer
+- **Partage** : Web Share API, avec copie presse-papiers en fallback
+- **Modes GPU, CPU et stabilité** : Les deux derniers sont des simulations indicatives côté navigateur
+- **Classement Supabase optionnel** : Envoi et lecture des scores si les variables d'environnement sont configurées
 - **Responsive** : Fonctionne sur mobile, tablette et desktop
 - **Déploiement automatique** : Compilé et déployé sur GitHub Pages via GitHub Actions
 
@@ -45,6 +49,20 @@ npm run preview
 2. **Cliquer sur "▶️ Démarrer"** pour lancer le benchmark
 3. **Observer les stats** : FPS, nombre d'objets, mémoire utilisée
 4. **Les objets augmentent** automatiquement si FPS > 50
+5. Utiliser **Partager** pour transmettre le score ou **Classement** pour consulter le top 10.
+
+Les modes CPU et stabilité ne mesurent pas directement le matériel : ils évaluent une charge JavaScript et la régularité des trames dans le navigateur.
+
+## ☁️ Classement Supabase (optionnel)
+
+Créer une base Supabase, exécuter `supabase/schema.sql`, puis définir :
+
+```bash
+VITE_SUPABASE_URL=https://votre-projet.supabase.co
+VITE_SUPABASE_ANON_KEY=votre-cle-anon
+```
+
+Sans ces variables, l'application reste entièrement fonctionnelle avec l'historique local.
 
 ## 📊 Interprétation des résultats
 

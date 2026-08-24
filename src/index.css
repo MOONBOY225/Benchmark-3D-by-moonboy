@@ -243,6 +243,38 @@ body {
     flex-direction: column;
   }
 
+  .mode-note, .status, .history, .leaderboard {
+    color: #aaa;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .action-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  .action-row button {
+    flex: 1;
+    padding: 8px;
+    border: 1px solid #55556a;
+    border-radius: 6px;
+    background: #29293b;
+    color: #fff;
+    cursor: pointer;
+  }
+
+  .history, .leaderboard {
+    border-top: 1px solid #404050;
+    padding-top: 12px;
+  }
+
+  .history h2, .leaderboard h2 {
+    color: #fff;
+    font-size: 14px;
+    margin-bottom: 6px;
+  }
+
   .sidebar {
     width: 100%;
     border-left: none;

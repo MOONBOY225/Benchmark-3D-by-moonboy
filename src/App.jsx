@@ -2,12 +2,18 @@ import { useMemo, useRef, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import Benchmark from './components/Benchmark';
 import Stats from './components/Stats';
+import { fetchLeaderboard, submitScore, supabase } from './services/supabase';
 import './App.css';
 
 const difficulties = {
   easy: { label: 'Facile', initialMeshes: 100, step: 25 },
   normal: { label: 'Normal', initialMeshes: 250, step: 50 },
   hard: { label: 'Difficile', initialMeshes: 500, step: 100 },
+};
+const modes = {
+  gpu: { label: 'GPU / WebGL', note: 'Mesure réelle du rendu 3D.' },
+  cpu: { label: 'CPU (simulation)', note: 'Charge JavaScript indicative, pas un benchmark matériel.' },
+  stability: { label: 'Stabilité (simulation)', note: 'Analyse de la régularité des images côté navigateur.' },
 };
 
 function getDeviceInfo() {
@@ -32,8 +38,29 @@ function App() {
   const [difficulty, setDifficulty] = useState('normal');
   const [duration, setDuration] = useState(30);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [mode, setMode] = useState('gpu');
+  const [history, setHistory] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('benchmark-history') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [status, setStatus] = useState('');
   const appRef = useRef(null);
-  const device = useMemo(getDeviceInfo, []);
+  const device = useMemo(() => getDeviceInfo(), []);
+
+  const saveResult = async (result) => {
+    const entry = { ...result, difficulty, mode, date: new Date().toISOString(), device };
+    const nextHistory = [entry, ...history].slice(0, 20);
+    setHistory(nextHistory);
+    localStorage.setItem('benchmark-history', JSON.stringify(nextHistory));
+    if (supabase) {
+      const response = await submitScore(entry);
+      setStatus(response.error ? 'Envoi au classement impossible.' : 'Résultat envoyé au classement.');
+    }
+  };
 
   const toggleBenchmark = () => {
     if (isRunning) {
@@ -41,7 +68,33 @@ function App() {
       return;
     }
     setStats(null);
+    setStatus('');
     setIsRunning(true);
+  };
+
+  const handleComplete = (result) => {
+    setIsRunning(false);
+    if (result) saveResult(result);
+  };
+
+  const shareResult = async () => {
+    if (!stats) return;
+    const text = `3D Benchmark — ${modes[mode].label}: ${stats.score.toLocaleString('fr-FR')} points, ${stats.averageFps} FPS moyen.`;
+    try {
+      if (navigator.share) await navigator.share({ title: 'Mon résultat 3D Benchmark', text });
+      else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        setStatus('Résultat copié dans le presse-papiers.');
+      } else setStatus('Partage et presse-papiers indisponibles.');
+    } catch (error) {
+      if (error.name !== 'AbortError') setStatus('Partage indisponible.');
+    }
+  };
+
+  const loadLeaderboard = async () => {
+    const response = await fetchLeaderboard(mode);
+    setLeaderboard(response.data);
+    setStatus(response.disabled ? 'Classement désactivé (variables Supabase absentes).' : response.error ? 'Classement indisponible.' : 'Classement actualisé.');
   };
 
   const toggleFullscreen = async () => {
@@ -72,8 +125,9 @@ function App() {
             <Benchmark
               difficulty={difficulties[difficulty]}
               duration={duration}
+              mode={mode}
               isRunning={isRunning}
-              onComplete={() => setIsRunning(false)}
+              onComplete={handleComplete}
               onStatsUpdate={setStats}
             />
           </Canvas>
@@ -86,6 +140,13 @@ function App() {
           </button>
 
           <div className="controls">
+            <label>
+              Mode de test
+              <select value={mode} onChange={(event) => setMode(event.target.value)} disabled={isRunning}>
+                {Object.entries(modes).map(([value, item]) => <option key={value} value={value}>{item.label}</option>)}
+              </select>
+            </label>
+            <p className="mode-note">{modes[mode].note}</p>
             <label>
               Difficulté
               <select value={difficulty} onChange={(event) => setDifficulty(event.target.value)} disabled={isRunning}>
@@ -104,7 +165,14 @@ function App() {
             </label>
           </div>
 
-          {stats ? <Stats {...stats} /> : <p className="hint">Choisissez un niveau puis démarrez le test.</p>}
+          {stats ? <><Stats {...stats} /><div className="action-row"><button onClick={shareResult}>↗ Partager</button><button onClick={loadLeaderboard}>Classement</button></div></> : <p className="hint">Choisissez un mode puis démarrez le test.</p>}
+          {status && <p className="status">{status}</p>}
+          {leaderboard.length > 0 && <section className="leaderboard"><h2>Top résultats</h2>{leaderboard.map((item, index) => <p key={item.id || `${item.score}-${index}`}>#{index + 1} · {item.score.toLocaleString('fr-FR')} pts · {item.average_fps} FPS</p>)}</section>}
+          <section className="history"><h2>Historique local</h2>{history.length === 0 ? <p>Aucun résultat enregistré.</p> : history.slice(0, 5).map((item, index) => {
+            const previous = history[index + 1];
+            const delta = previous ? item.score - previous.score : null;
+            return <p key={`${item.date}-${index}`}>{new Date(item.date).toLocaleDateString('fr-FR')} · {item.score.toLocaleString('fr-FR')} pts · {modes[item.mode]?.label}{delta !== null && ` (${delta >= 0 ? '+' : ''}${delta.toLocaleString('fr-FR')} vs précédent)`}</p>;
+          })}</section>
 
           <section className="device-info">
             <h2>Appareil</h2>
