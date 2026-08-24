@@ -1,20 +1,15 @@
-export default function Stats({ fps, meshCount, memory }) {
+export default function Stats({ fps, averageFps, meshCount, memory, elapsed, duration, score }) {
+  const fpsClass = fps > 50 ? 'good' : fps > 30 ? 'ok' : 'bad';
+
   return (
     <div className="stats">
-      <div className="stat-item">
-        <span className="stat-label">FPS</span>
-        <span className={`stat-value ${fps > 50 ? 'good' : fps > 30 ? 'ok' : 'bad'}`}>
-          {fps}
-        </span>
-      </div>
-      <div className="stat-item">
-        <span className="stat-label">Objets 3D</span>
-        <span className="stat-value">{meshCount}</span>
-      </div>
-      <div className="stat-item">
-        <span className="stat-label">Mémoire</span>
-        <span className="stat-value">{memory} MB</span>
-      </div>
+      <div className="result-heading">Résultats {elapsed >= duration ? 'finaux' : 'en direct'}</div>
+      <div className="stat-item"><span className="stat-label">FPS actuels</span><strong className={`stat-value ${fpsClass}`}>{fps || '--'}</strong></div>
+      <div className="stat-item"><span className="stat-label">FPS moyen</span><strong className="stat-value">{averageFps || '--'}</strong></div>
+      <div className="stat-item"><span className="stat-label">Score</span><strong className="stat-value score">{score?.toLocaleString('fr-FR') || '--'}</strong></div>
+      <div className="stat-item"><span className="stat-label">Objets 3D</span><strong className="stat-value">{meshCount}</strong></div>
+      <div className="stat-item"><span className="stat-label">Progression</span><strong className="stat-value">{elapsed}s / {duration}s</strong></div>
+      <div className="stat-item"><span className="stat-label">Mémoire</span><strong className="stat-value small">{memory}</strong></div>
     </div>
   );
 }

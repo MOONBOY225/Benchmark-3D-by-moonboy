@@ -94,6 +94,105 @@ body {
   transform: translateY(0);
 }
 
+.header {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+}
+
+.fullscreen-btn {
+  padding: 9px 12px;
+  border: 1px solid #55556a;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  cursor: pointer;
+}
+
+.fullscreen-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.running-badge {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 107, 107, 0.9);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.controls {
+  display: grid;
+  gap: 12px;
+}
+
+.controls label {
+  display: grid;
+  gap: 6px;
+  color: #bbb;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.controls select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #55556a;
+  border-radius: 6px;
+  background: #29293b;
+  color: #fff;
+  font-size: 14px;
+}
+
+.controls select:disabled {
+  opacity: 0.55;
+}
+
+.hint {
+  padding: 12px;
+  border: 1px dashed #55556a;
+  border-radius: 8px;
+  color: #999;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.device-info {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid #404050;
+  color: #999;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.device-info h2 {
+  margin-bottom: 6px;
+  color: #fff;
+  font-size: 14px;
+}
+
+.result-heading {
+  margin-bottom: 2px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.stat-value.score {
+  color: #ffd43b;
+}
+
+.stat-value.small {
+  font-size: 13px;
+}
+
 .stats {
   display: flex;
   flex-direction: column;
@@ -157,5 +256,13 @@ body {
 
   .header {
     padding: 12px;
+  }
+
+  .header {
+    justify-content: space-between;
+  }
+
+  .fullscreen-btn {
+    font-size: 11px;
   }
 }
