@@ -22,6 +22,7 @@ Une application web interactive pour tester les performances 3D de votre télép
 - **React Three Fiber** - Intégration React pour Three.js
 - **GitHub Actions** - CI/CD automatique
 - **GitHub Pages** - Hosting gratuit
+- **Capacitor Android** - Application Android installable
 
 ## 📦 Installation
 
@@ -41,7 +42,21 @@ npm run build
 
 # Préview build local
 npm run preview
+
+# Préparer/synchroniser le projet Android
+npx cap sync android
+
+# Ouvrir dans Android Studio
+npx cap open android
+
+# Construire l'APK debug (depuis la racine du projet)
+cd android
+.\gradlew.bat assembleDebug
+# Sur macOS/Linux : ./gradlew assembleDebug
 ```
+
+L'APK est généré dans `android/app/build/outputs/apk/debug/app-debug.apk`.
+Un APK debug est également disponible comme artefact du workflow GitHub Actions.
 
 ## 🎮 Utilisation
 
@@ -83,6 +98,10 @@ git push origin main
 ```
 
 L'app sera disponible à: `https://votre-username.github.io/3d-benchmark-app/`
+
+Le build Pages conserve la base `/Benchmark-3D-by-moonboy/`. Le build Android
+utilise automatiquement une base relative (`./`) afin que les assets fonctionnent
+dans l'application native.
 
 ## 📝 Configuration base URL
 

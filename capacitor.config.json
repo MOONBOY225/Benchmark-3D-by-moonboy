@@ -1,0 +1,8 @@
+{
+  "appId": "com.moonboy.benchmark3d",
+  "appName": "Benchmark 3D",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}
