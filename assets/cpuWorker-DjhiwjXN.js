@@ -1,0 +1,1 @@
+(function(){self.onmessage=({data:e})=>{let{durationMs:t}=e,n=performance.now(),r=n+t,i=0,a=2166136261;for(;performance.now()<r;)for(let e=0;e<5e4;e+=1)a^=e+i,a=Math.imul(a,16777619),a^=a>>>13,i+=1;let o=Math.max((performance.now()-n)/1e3,.001);self.postMessage({operations:i,elapsedSeconds:o,opsPerSecond:i/o})}})();
