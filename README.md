@@ -5,18 +5,22 @@ Une application web interactive pour tester les performances 3D de votre télép
 ## 🚀 Fonctionnalités
 
 - **Benchmark FPS en temps réel** : Mesure les FPS et la performance 3D
-- **Augmentation dynamique** : Le nombre d'objets 3D augmente automatiquement si les FPS sont élevés
-- **Statistiques en direct** : Affiche FPS, nombre d'objets et mémoire utilisée
-- **Historique local** : Conserve les 20 derniers résultats et permet de les comparer
+- **Métriques avancées** : FPS moyen/min/max, percentiles (1% low), stabilité et détection du ralentissement thermique
+- **Graphique FPS en direct** : Visualisation de chaque échantillon pendant le test
+- **Augmentation dynamique** : Le nombre d'objets 3D augmente automatiquement si les FPS sont élevés (avec plafond par difficulté)
+- **Scène GPU exigeante** : Ombres dynamiques, matériaux PBR variés (boîtes, icosaèdres, nœuds de tore) et caméra orbitale
+- **Vrai test CPU multi-cœur** : Charge réelle répartie sur tous les cœurs logiques via Web Workers
+- **Wake Lock** : L'écran reste allumé pendant un test
+- **Historique local** : Conserve les 50 derniers résultats, met en avant le record et permet de les comparer
 - **Partage** : Web Share API, avec copie presse-papiers en fallback
-- **Modes GPU, CPU et stabilité** : Les deux derniers sont des simulations indicatives côté navigateur
+- **Infos appareil détaillées** : Nom du GPU (WebGL), RAM, cœurs logiques, résolution et densité de pixels
 - **Classement Supabase optionnel** : Envoi et lecture des scores si les variables d'environnement sont configurées
 - **Responsive** : Fonctionne sur mobile, tablette et desktop
 - **Déploiement automatique** : Compilé et déployé sur GitHub Pages via GitHub Actions
 
 ## 🛠️ Tech Stack
 
-- **React 18** - Interface utilisateur
+- **React 19** - Interface utilisateur
 - **Vite** - Build tool ultra-rapide
 - **Three.js** - Rendu 3D WebGL
 - **React Three Fiber** - Intégration React pour Three.js
@@ -66,7 +70,19 @@ Un APK debug est également disponible comme artefact du workflow GitHub Actions
 4. **Les objets augmentent** automatiquement si FPS > 50
 5. Utiliser **Partager** pour transmettre le score ou **Classement** pour consulter le top 10.
 
-Les modes CPU et stabilité ne mesurent pas directement le matériel : ils évaluent une charge JavaScript et la régularité des trames dans le navigateur.
+Le mode CPU exécute un calcul entier réel (hachage FNV-1a) dans un Web Worker par cœur logique
+et mesure le débit agrégé en millions d'opérations par seconde (M ops/s).
+Le mode stabilité applique une charge GPU constante et analyse la régularité des trames.
+
+## 📈 Métriques
+
+| Métrique | Description |
+| --- | --- |
+| FPS actuels / moyen | Fréquence d'images instantanée et moyenne du test |
+| FPS min / max | Pire et meilleure seconde du test |
+| 1% low | FPS correspondant au percentile 99 des temps de rendu (micro-saccades) |
+| Stabilité | 100 - écart-type des FPS × 4 |
+| Throttling | Alerte si les FPS chutent de plus de 12 % entre la première et la seconde moitié du test |
 
 ## ☁️ Classement Supabase (optionnel)
 
@@ -112,6 +128,14 @@ export default {
   base: '/3d-benchmark-app/',
 }
 ```
+
+## 🏋️ Difficultés et plafonds
+
+| Difficulté | Objets initiaux | Palier | Plafond |
+| --- | --- | --- | --- |
+| Facile | 100 | +25/s si FPS > 50 | 3 000 |
+| Normal | 250 | +50/s si FPS > 50 | 8 000 |
+| Difficile | 500 | +100/s si FPS > 50 | 20 000 |
 
 ## 📄 Licence
 

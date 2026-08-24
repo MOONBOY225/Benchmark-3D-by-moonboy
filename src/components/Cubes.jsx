@@ -1,34 +1,70 @@
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 
-export default function Cubes({ count }) {
-  const instancedMeshRef = useRef();
+const dummy = new THREE.Object3D();
 
-  useFrame((state) => {
-    if (!instancedMeshRef.current) return;
+function updateInstances(mesh, count, time, radius, scale) {
+  if (!mesh) return;
+  for (let i = 0; i < count; i += 1) {
+    const phase = time + i * 0.37;
+    dummy.position.set(
+      Math.sin(phase) * radius,
+      Math.cos(phase * 0.8 + i) * radius * 0.7,
+      Math.sin(phase * 0.6 + i * 0.5) * radius
+    );
+    dummy.rotation.set(phase, phase * 0.5, 0);
+    const pulse = 1 + Math.sin(phase * 2) * 0.15;
+    dummy.scale.setScalar(scale * pulse);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(i, dummy.matrix);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+}
 
-    const matrix = new THREE.Matrix4();
-    for (let i = 0; i < count; i++) {
-      matrix.setPosition(
-        Math.sin(state.clock.elapsedTime + i) * 8,
-        Math.cos(state.clock.elapsedTime + i) * 8,
-        Math.sin(state.clock.elapsedTime + i * 0.5) * 8
-      );
-      matrix.rotateX(state.clock.elapsedTime + i);
-      matrix.rotateY(state.clock.elapsedTime + i * 0.5);
-      instancedMeshRef.current.setMatrixAt(i, matrix);
-    }
-    instancedMeshRef.current.instanceMatrix.needsUpdate = true;
+export default function Cubes({ count, animated = true }) {
+  const boxesRef = useRef();
+  const spheresRef = useRef();
+  const knotsRef = useRef();
+
+  const { boxCount, sphereCount, knotCount } = useMemo(() => {
+    const boxes = Math.ceil(count * 0.6);
+    const spheres = Math.ceil(count * 0.25);
+    return { boxCount: boxes, sphereCount: spheres, knotCount: Math.max(count - boxes - spheres, 0) };
+  }, [count]);
+
+  useFrame(({ clock }) => {
+    if (!animated) return;
+    const time = clock.elapsedTime;
+    updateInstances(boxesRef.current, boxCount, time, 8.5, 0.6);
+    updateInstances(spheresRef.current, sphereCount, time + 40, 11.5, 0.85);
+    updateInstances(knotsRef.current, knotCount, time + 80, 14.5, 1.1);
   });
 
   return (
-    <instancedMesh 
-      ref={instancedMeshRef} 
-      args={[null, null, count]}
-    >
-      <boxGeometry args={[0.5, 0.5, 0.5]} />
-      <meshStandardMaterial color="#ff6b6b" metalness={0.8} roughness={0.2} />
-    </instancedMesh>
+    <>
+      {boxCount > 0 && (
+        <instancedMesh ref={boxesRef} args={[null, null, boxCount]} castShadow receiveShadow>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial color="#ff6b6b" metalness={0.75} roughness={0.25} />
+        </instancedMesh>
+      )}
+      {sphereCount > 0 && (
+        <instancedMesh ref={spheresRef} args={[null, null, sphereCount]} castShadow receiveShadow>
+          <icosahedronGeometry args={[0.55, 2]} />
+          <meshStandardMaterial color="#4dabf7" metalness={0.9} roughness={0.15} />
+        </instancedMesh>
+      )}
+      {knotCount > 0 && (
+        <instancedMesh ref={knotsRef} args={[null, null, knotCount]} castShadow receiveShadow>
+          <torusKnotGeometry args={[0.4, 0.13, 96, 12]} />
+          <meshStandardMaterial color="#ffd43b" metalness={0.6} roughness={0.35} />
+        </instancedMesh>
+      )}
+      <mesh rotation-x={-Math.PI / 2} position-y={-10} receiveShadow>
+        <planeGeometry args={[90, 90]} />
+        <meshStandardMaterial color="#151527" metalness={0.2} roughness={0.9} />
+      </mesh>
+    </>
   );
 }
