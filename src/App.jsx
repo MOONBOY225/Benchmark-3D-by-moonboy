@@ -3,18 +3,24 @@ import { Canvas } from '@react-three/fiber';
 import Benchmark from './components/Benchmark';
 import Stats from './components/Stats';
 import FpsGraph from './components/FpsGraph';
+import { SCENES, SUITE_SCENE_IDS } from './scenes';
 import { fetchLeaderboard, submitScore, supabase } from './services/supabase';
 import './App.css';
 
 const difficulties = {
-  easy: { label: 'Facile', initialMeshes: 100, step: 25, maxMeshes: 3000 },
-  normal: { label: 'Normal', initialMeshes: 250, step: 50, maxMeshes: 8000 },
-  hard: { label: 'Difficile', initialMeshes: 500, step: 100, maxMeshes: 20000 },
+  easy: { label: 'Facile', factor: 0.5 },
+  normal: { label: 'Normal', factor: 1 },
+  hard: { label: 'Difficile', factor: 2 },
 };
 const modes = {
-  gpu: { label: 'GPU / WebGL', note: 'Mesure réelle du rendu 3D avec ombres et matériaux PBR.' },
-  cpu: { label: 'CPU multi-cœur', note: `Charge réelle répartie sur tous les cœurs logiques via Web Workers (jusqu'à ${Math.min(navigator.hardwareConcurrency || 4, 16)}).` },
-  stability: { label: 'Stabilité', note: "Analyse de la régularité des images sous charge constante." },
+  suite: {
+    label: 'Suite',
+    fullLabel: 'Suite complète',
+    note: `Les ${SUITE_SCENE_IDS.length} scènes s'enchaînent automatiquement pour un score global type AnTuTu.`,
+  },
+  gpu: { label: 'Scène', fullLabel: 'Scène unique', note: 'Choisissez une scène GPU et mesurez sa performance.' },
+  cpu: { label: 'CPU', fullLabel: 'CPU multi-cœur', note: `Charge réelle sur tous les cœurs logiques via Web Workers (jusqu'à ${Math.min(navigator.hardwareConcurrency || 4, 16)}).` },
+  stability: { label: 'Stabilité', fullLabel: 'Stabilité', note: 'Charge constante et analyse de la régularité des images.' },
 };
 
 function detectGpuRenderer() {
@@ -53,13 +59,31 @@ function getDeviceInfo() {
   };
 }
 
+function Segmented({ value, options, onChange, disabled }) {
+  return (
+    <div className={`segmented${disabled ? ' disabled' : ''}`}>
+      {options.map((option) => (
+        <button
+          key={option.value}
+          className={`segment-item${value === option.value ? ' active' : ''}`}
+          onClick={() => onChange(option.value)}
+          disabled={disabled}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function App() {
   const [stats, setStats] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
   const [difficulty, setDifficulty] = useState('normal');
   const [duration, setDuration] = useState(30);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [mode, setMode] = useState('gpu');
+  const [mode, setMode] = useState('suite');
+  const [sceneId, setSceneId] = useState('swarm');
   const [history, setHistory] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('benchmark-history') || '[]');
@@ -75,6 +99,7 @@ function App() {
     () => history.reduce((max, item) => (item.mode === mode && item.score > max ? item.score : max), 0),
     [history, mode]
   );
+  const progress = stats ? Math.min((stats.elapsed / duration) * 100, 100) : 0;
 
   useEffect(() => {
     if (!isRunning || !('wakeLock' in navigator)) return undefined;
@@ -118,7 +143,11 @@ function App() {
 
   const shareResult = async () => {
     if (!stats) return;
-    const text = `3D Benchmark — ${modes[mode].label}: ${stats.score?.toLocaleString('fr-FR') ?? '--'} points, ${stats.averageFps} FPS moyen.`;
+    let text = `3D Benchmark Lite — ${modes[mode].fullLabel}: ${stats.score?.toLocaleString('fr-FR') ?? '--'} points`;
+    if (stats.breakdown?.length > 0) {
+      text += ` (${stats.breakdown.map((item) => `${item.label} ${item.score?.toLocaleString('fr-FR')}`).join(', ')})`;
+    }
+    text += `, ${stats.averageFps} FPS moyen.`;
     try {
       if (navigator.share) await navigator.share({ title: 'Mon résultat 3D Benchmark', text });
       else if (navigator.clipboard?.writeText) {
@@ -163,24 +192,28 @@ function App() {
   return (
     <div className="app" ref={appRef}>
       <header className="header">
-        <div>
-          <h1>📱 3D Benchmark</h1>
-          <p>Mesurez les performances GPU et CPU de votre appareil</p>
+        <div className="brand">
+          <div className="logo-mark">◆</div>
+          <div>
+            <h1>Benchmark 3D <span className="lite-tag">LITE</span></h1>
+            <p>Suite de tests GPU & CPU pour votre appareil</p>
+          </div>
         </div>
         <button className="fullscreen-btn" onClick={toggleFullscreen}>
-          {isFullscreen ? '⤢ Quitter plein écran' : '⛶ Plein écran'}
+          {isFullscreen ? '⤢ Quitter' : '⛶ Plein écran'}
         </button>
       </header>
 
       <main className="container">
         <div className="canvas-wrapper">
           <Canvas
-            camera={{ position: [0, 4.5, 15], fov: 60 }}
+            camera={{ position: [0, 5, 16], fov: 55 }}
             dpr={[1, 2]}
             shadows
             gl={{ antialias: true, powerPreference: 'high-performance' }}
           >
             <Benchmark
+              sceneId={sceneId}
               difficulty={difficulties[difficulty]}
               duration={duration}
               mode={mode}
@@ -190,41 +223,66 @@ function App() {
             />
           </Canvas>
           {isRunning && (
-            <div className="running-badge">
-              TEST EN COURS · {stats ? `${stats.elapsed}s / ${duration}s` : `0s / ${duration}s`}
-            </div>
+            <>
+              <div className="scene-badge">
+                <span>{stats?.sceneIcon || '▶'}</span>
+                {stats?.sceneLabel || 'Préparation'}
+                <em>{stats ? `${stats.elapsed}s / ${duration}s` : `0s / ${duration}s`}</em>
+              </div>
+              <div className="run-progress"><span style={{ width: `${progress}%` }} /></div>
+            </>
           )}
         </div>
 
         <aside className="sidebar">
           <button className="start-btn" onClick={toggleBenchmark}>
-            {isRunning ? '⏹ Arrêter le test' : '▶ Démarrer le test'}
+            {isRunning ? '⏹ Arrêter le test' : '▶ Lancer le benchmark'}
           </button>
 
           <div className="controls">
-            <label>
-              Mode de test
-              <select value={mode} onChange={(event) => setMode(event.target.value)} disabled={isRunning}>
-                {Object.entries(modes).map(([value, item]) => <option key={value} value={value}>{item.label}</option>)}
-              </select>
-            </label>
+            <span className="control-title">Mode</span>
+            <Segmented
+              value={mode}
+              onChange={setMode}
+              disabled={isRunning}
+              options={Object.entries(modes).map(([value, item]) => ({ value, label: item.label }))}
+            />
             <p className="mode-note">{modes[mode].note}</p>
-            <label>
-              Difficulté
-              <select value={difficulty} onChange={(event) => setDifficulty(event.target.value)} disabled={isRunning}>
-                {Object.entries(difficulties).map(([value, item]) => (
-                  <option key={value} value={value}>{item.label}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Durée
-              <select value={duration} onChange={(event) => setDuration(Number(event.target.value))} disabled={isRunning}>
-                <option value={15}>15 secondes</option>
-                <option value={30}>30 secondes</option>
-                <option value={60}>60 secondes</option>
-              </select>
-            </label>
+
+            {mode === 'gpu' && (
+              <>
+                <span className="control-title">Scène</span>
+                <div className="chips">
+                  {SUITE_SCENE_IDS.map((id) => (
+                    <button
+                      key={id}
+                      className={`chip${sceneId === id ? ' active' : ''}`}
+                      onClick={() => setSceneId(id)}
+                      disabled={isRunning}
+                    >
+                      {SCENES[id].icon} {SCENES[id].label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mode-note">{SCENES[sceneId].description}</p>
+              </>
+            )}
+
+            <span className="control-title">Intensité</span>
+            <Segmented
+              value={difficulty}
+              onChange={setDifficulty}
+              disabled={isRunning}
+              options={Object.entries(difficulties).map(([value, item]) => ({ value, label: item.label }))}
+            />
+
+            <span className="control-title">Durée</span>
+            <Segmented
+              value={duration}
+              onChange={setDuration}
+              disabled={isRunning}
+              options={[15, 30, 60].map((value) => ({ value, label: `${value}s` }))}
+            />
           </div>
 
           {stats ? (
@@ -237,7 +295,7 @@ function App() {
               </div>
             </>
           ) : (
-            <p className="hint">Choisissez un mode puis démarrez le test.</p>
+            <p className="hint">Choisissez un mode puis lancez le benchmark.</p>
           )}
           {status && <p className="status">{status}</p>}
           {leaderboard.length > 0 && (
@@ -259,9 +317,9 @@ function App() {
               const isBest = item.mode === mode && item.score === bestScore && bestScore > 0;
               return (
                 <p key={`${item.date}-${index}`}>
-                  {new Date(item.date).toLocaleDateString('fr-FR')} · {item.score.toLocaleString('fr-FR')} pts · {modes[item.mode]?.label}
+                  {new Date(item.date).toLocaleDateString('fr-FR')} · {item.score.toLocaleString('fr-FR')} pts · {modes[item.mode]?.fullLabel || item.mode}
                   {isBest && ' 🏆'}
-                  {delta !== null && ` (${delta >= 0 ? '+' : ''}${delta.toLocaleString('fr-FR')} vs précédent)`}
+                  {delta !== null && ` (${delta >= 0 ? '+' : ''}${delta.toLocaleString('fr-FR')})`}
                 </p>
               );
             })}

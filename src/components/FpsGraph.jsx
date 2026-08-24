@@ -25,7 +25,7 @@ export default function FpsGraph({ samples }) {
     recent.forEach((fps, index) => {
       const barHeight = Math.min((fps / maxFps) * height * 0.92, height);
       const x = index * barWidth;
-      const color = fps > 50 ? '#51cf66' : fps > 30 ? '#ffa500' : '#ff6b6b';
+      const color = fps > 50 ? '#34d399' : fps > 30 ? '#fbbf24' : '#fb7185';
       ctx.fillStyle = color;
       ctx.fillRect(x + barWidth * 0.12, height - barHeight, barWidth * 0.76, barHeight);
     });

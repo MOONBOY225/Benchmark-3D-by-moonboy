@@ -1,19 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import Cubes from './Cubes';
+import { SCENES, SUITE_SCENE_IDS, scaleConfig } from '../scenes';
 
 const GRACE_PERIOD_SECONDS = 5;
 const THROTTLE_DROP_RATIO = 0.88;
+const MAX_TRACKED_FRAMES = 30000;
 
 function computeFrameStats(frameTimes) {
-  if (frameTimes.length === 0) return null;
+  if (frameTimes.length === 0) return {};
   const sorted = [...frameTimes].sort((a, b) => a - b);
   const percentile = (ratio) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * ratio))];
-  const p99 = percentile(0.99);
-  const p95 = percentile(0.95);
   return {
-    onePercentLow: Math.round(1000 / Math.max(p99, 1)),
-    onePercentLowP95: Math.round(1000 / Math.max(p95, 1)),
+    onePercentLow: Math.round(1000 / Math.max(percentile(0.99), 1)),
     minFps: Math.round(1000 / Math.max(sorted[sorted.length - 1], 1)),
     maxFps: Math.round(1000 / Math.max(sorted[0], 1)),
   };
@@ -28,18 +26,30 @@ function detectThrottle(samples) {
   return firstHalf > 0 && secondHalf < firstHalf * THROTTLE_DROP_RATIO;
 }
 
-export default function Benchmark({ difficulty, duration, mode, isRunning, onComplete, onStatsUpdate }) {
-  const frameTimesRef = useRef([]);
+function averageOf(samples) {
+  if (samples.length === 0) return 0;
+  return samples.reduce((sum, sample) => sum + sample, 0) / samples.length;
+}
+
+export default function Benchmark({
+  sceneId, difficulty, duration, mode, isRunning, onComplete, onStatsUpdate,
+}) {
+  const startedAtRef = useRef(0);
   const lastFrameRef = useRef(0);
   const lastSampleRef = useRef(0);
-  const startedAtRef = useRef(0);
-  const [meshCount, setMeshCount] = useState(difficulty.initialMeshes);
-  const meshCountRef = useRef(difficulty.initialMeshes);
+  const frameCountRef = useRef(0);
+  const frameTimesRef = useRef([]);
   const samplesRef = useRef([]);
+  const segSamplesRef = useRef([]);
+  const segResultsRef = useRef([]);
   const latestResultRef = useRef(null);
   const completedRef = useRef(false);
   const workersRef = useRef([]);
   const cpuResultsRef = useRef(null);
+  const segmentsRef = useRef([]);
+  const loadRef = useRef(difficulty.factor * SCENES[sceneId].initial);
+  const [activeSceneId, setActiveSceneId] = useState(sceneId);
+  const [load, setLoad] = useState(loadRef.current);
 
   const spawnCpuWorkers = () => {
     const workerCount = Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 16));
@@ -66,17 +76,18 @@ export default function Benchmark({ difficulty, duration, mode, isRunning, onCom
       worker.postMessage({ durationMs: duration * 1000 });
       return worker;
     });
-
-    return workerCount;
   };
 
   useEffect(() => {
     if (!isRunning) {
-      setMeshCount(difficulty.initialMeshes);
-      meshCountRef.current = difficulty.initialMeshes;
+      setActiveSceneId(sceneId);
+      loadRef.current = Math.round(difficulty.factor * SCENES[sceneId].initial);
+      setLoad(loadRef.current);
       frameTimesRef.current = [];
-      lastSampleRef.current = 0;
       samplesRef.current = [];
+      segSamplesRef.current = [];
+      segResultsRef.current = [];
+      segmentsRef.current = [];
       latestResultRef.current = null;
       completedRef.current = false;
       cpuResultsRef.current = null;
@@ -84,15 +95,29 @@ export default function Benchmark({ difficulty, duration, mode, isRunning, onCom
       workersRef.current = [];
       return undefined;
     }
+
+    const factor = difficulty.factor;
+    let sceneIds;
+    if (mode === 'suite') sceneIds = SUITE_SCENE_IDS;
+    else if (mode === 'stability') sceneIds = ['swarm'];
+    else sceneIds = [sceneId];
+
+    segmentsRef.current = sceneIds.map((id) => ({ id, config: scaleConfig(SCENES[id], factor) }));
+    const firstSegment = segmentsRef.current[0];
+    setActiveSceneId(firstSegment.id);
+    loadRef.current = firstSegment.config.initial;
+    setLoad(firstSegment.config.initial);
+
     startedAtRef.current = performance.now();
     lastFrameRef.current = startedAtRef.current;
     lastSampleRef.current = startedAtRef.current;
+    frameCountRef.current = 0;
     frameTimesRef.current = [];
     samplesRef.current = [];
+    segSamplesRef.current = [];
+    segResultsRef.current = [];
     cpuResultsRef.current = null;
     completedRef.current = false;
-    setMeshCount(difficulty.initialMeshes);
-    meshCountRef.current = difficulty.initialMeshes;
 
     if (mode === 'cpu') spawnCpuWorkers();
 
@@ -101,73 +126,119 @@ export default function Benchmark({ difficulty, duration, mode, isRunning, onCom
       workersRef.current = [];
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [difficulty, isRunning, mode]);
+  }, [difficulty, isRunning, mode, sceneId]);
+
+  const finalizeSegment = (segment, averageFps) => {
+    const score =
+      mode === 'stability'
+        ? null
+        : Math.max(1, Math.round((averageFps * loadRef.current) / segment.config.divisor));
+    segResultsRef.current.push({
+      id: segment.id,
+      label: segment.config.label,
+      icon: segment.config.icon,
+      fps: Math.round(averageFps),
+      load: loadRef.current,
+      score,
+    });
+    segSamplesRef.current = [];
+  };
+
+  const buildLiveResult = (fps, elapsedSeconds) => {
+    const segments = segmentsRef.current;
+    const currentSegment = segments[Math.min(segResultsRef.current.length, segments.length - 1)];
+    const averageFps = Math.round(averageOf(samplesRef.current));
+    const variance =
+      samplesRef.current.reduce((sum, sample) => sum + ((sample - averageFps) ** 2), 0)
+      / Math.max(samplesRef.current.length, 1);
+    const stability = Math.max(0, Math.round(100 - Math.sqrt(variance) * 4));
+
+    let partialScore = null;
+    if (mode === 'gpu' || mode === 'suite') {
+      const finalizedSum = segResultsRef.current.reduce((sum, item) => sum + (item.score || 0), 0);
+      const currentAvg = averageOf(segSamplesRef.current);
+      const currentPartial = currentSegment && currentAvg > 0
+        ? (currentAvg * loadRef.current) / currentSegment.config.divisor
+        : 0;
+      partialScore = Math.round(finalizedSum + currentPartial);
+    } else if (mode === 'stability') {
+      partialScore = Math.round(averageFps * stability);
+    }
+
+    return {
+      fps,
+      averageFps,
+      meshCount: mode === 'cpu' ? null : loadRef.current,
+      memory: performance.memory
+        ? `${(performance.memory.usedJSHeapSize / 1048576).toFixed(1)} MB`
+        : 'Non disponible',
+      elapsed: Math.round(elapsedSeconds),
+      duration,
+      stability,
+      score: partialScore,
+      mode,
+      sceneLabel: mode === 'cpu' ? 'CPU multi-cœur' : currentSegment?.config.label,
+      sceneIcon: mode === 'cpu' ? '⚙️' : currentSegment?.config.icon,
+      breakdown: [...segResultsRef.current],
+      samples: [...samplesRef.current],
+      throttled: detectThrottle(samplesRef.current),
+      ...computeFrameStats(mode === 'cpu' ? [] : frameTimesRef.current),
+    };
+  };
 
   useFrame(() => {
     if (!isRunning) return;
 
     const now = performance.now();
-    frameTimesRef.current.push(now - lastFrameRef.current);
+    const delta = now - lastFrameRef.current;
     lastFrameRef.current = now;
-    const elapsedSeconds = (now - startedAtRef.current) / 1000;
+    frameCountRef.current += 1;
+    if (mode !== 'cpu') {
+      frameTimesRef.current.push(delta);
+      if (frameTimesRef.current.length > MAX_TRACKED_FRAMES) frameTimesRef.current.shift();
+    }
+    const elapsedMs = now - startedAtRef.current;
+    const elapsedSeconds = elapsedMs / 1000;
+
+    const segments = segmentsRef.current;
+    const segmentDurationMs = (duration * 1000) / segments.length;
+    const targetSegmentIndex = Math.min(Math.floor(elapsedMs / segmentDurationMs), segments.length - 1);
+
+    if (targetSegmentIndex > segResultsRef.current.length) {
+      while (segResultsRef.current.length < targetSegmentIndex) {
+        const index = segResultsRef.current.length;
+        finalizeSegment(segments[index], averageOf(segSamplesRef.current));
+      }
+      const nextSegment = segments[targetSegmentIndex];
+      setActiveSceneId(nextSegment.id);
+      loadRef.current = nextSegment.config.initial;
+      setLoad(nextSegment.config.initial);
+    }
 
     if (now - lastSampleRef.current >= 1000) {
       const sampleDuration = now - lastSampleRef.current;
-      const fps = Math.round((frameTimesRef.current.length * 1000) / sampleDuration);
+      const fps = Math.max(1, Math.round((frameCountRef.current * 1000) / sampleDuration));
+      frameCountRef.current = 0;
       samplesRef.current.push(fps);
+      segSamplesRef.current.push(fps);
 
-      let nextMeshes = meshCountRef.current;
-      if (mode === 'gpu' && fps > 50 && nextMeshes < difficulty.maxMeshes) {
-        nextMeshes = Math.min(nextMeshes + difficulty.step, difficulty.maxMeshes);
-        meshCountRef.current = nextMeshes;
-        setMeshCount(nextMeshes);
+      if ((mode === 'gpu' || mode === 'suite') && fps > 50) {
+        const currentSegment = segments[targetSegmentIndex];
+        if (loadRef.current < currentSegment.config.max) {
+          loadRef.current = Math.min(loadRef.current + currentSegment.config.step, currentSegment.config.max);
+          setLoad(loadRef.current);
+        }
       }
 
-      const averageFps = Math.round(
-        samplesRef.current.reduce((sum, sample) => sum + sample, 0) / samplesRef.current.length
-      );
-      const variance =
-        samplesRef.current.reduce((sum, sample) => sum + ((sample - averageFps) ** 2), 0)
-        / samplesRef.current.length;
-      const stability = Math.max(0, Math.round(100 - Math.sqrt(variance) * 4));
-      const memory = performance.memory
-        ? `${(performance.memory.usedJSHeapSize / 1048576).toFixed(1)} MB`
-        : 'Non disponible';
-
-      const result = {
-        fps,
-        averageFps,
-        meshCount: mode === 'cpu' ? null : nextMeshes,
-        memory,
-        elapsed: Math.round(elapsedSeconds),
-        duration,
-        stability,
-        score:
-          mode === 'gpu'
-            ? Math.round((averageFps * nextMeshes) / 10)
-            : mode === 'cpu'
-              ? null
-              : Math.round(averageFps * stability),
-        mode,
-        samples: [...samplesRef.current],
-        throttled: detectThrottle(samplesRef.current),
-        ...computeFrameStats(frameTimesRef.current),
-      };
+      const result = buildLiveResult(fps, elapsedSeconds);
       latestResultRef.current = result;
       onStatsUpdate(result);
-
       lastSampleRef.current = now;
-      frameTimesRef.current = [];
     }
 
     const cpuReady = mode !== 'cpu' || cpuResultsRef.current !== null;
     const timedOut = mode === 'cpu' && elapsedSeconds >= duration + GRACE_PERIOD_SECONDS;
-    if (
-      elapsedSeconds >= duration
-      && !completedRef.current
-      && latestResultRef.current
-      && (cpuReady || timedOut)
-    ) {
+    if (elapsedSeconds >= duration && !completedRef.current && latestResultRef.current && (cpuReady || timedOut)) {
       completedRef.current = true;
       const finalResult = { ...latestResultRef.current, elapsed: duration };
 
@@ -181,44 +252,42 @@ export default function Benchmark({ difficulty, duration, mode, isRunning, onCom
           onComplete(null);
           return;
         }
+      } else {
+        if (segResultsRef.current.length < segments.length) {
+          finalizeSegment(segments[segResultsRef.current.length], averageOf(segSamplesRef.current));
+        }
+        const breakdown = [...segResultsRef.current];
+        finalResult.breakdown = breakdown;
+        if (mode === 'stability') {
+          finalResult.score = Math.round(finalResult.averageFps * finalResult.stability);
+        } else {
+          finalResult.score = breakdown.reduce((sum, item) => sum + (item.score || 0), 0);
+        }
       }
+
       workersRef.current.forEach((worker) => worker.terminate());
       workersRef.current = [];
       onComplete(finalResult);
     }
   });
 
-  const cameraAngle = useRef(0);
-  useFrame((state) => {
-    if (isRunning && mode === 'gpu') {
-      cameraAngle.current += 0.0025;
-      state.camera.position.set(
-        Math.sin(cameraAngle.current) * 15,
-        4.5,
-        Math.cos(cameraAngle.current) * 15
-      );
-      state.camera.lookAt(0, 0, 0);
-    }
-  });
+  const renderScene = () => {
+    if (mode === 'cpu') return null;
+    const SceneComponent = SCENES[activeSceneId]?.component;
+    if (!SceneComponent) return null;
+    return (
+      <SceneComponent
+        key={`${activeSceneId}-${isRunning ? 'run' : 'idle'}`}
+        load={Math.round(load)}
+        animated={isRunning}
+      />
+    );
+  };
 
   return (
     <>
-      <color attach="background" args={['#0d0f1a']} />
-      <fog attach="fog" args={['#0d0f1a', 20, 60]} />
-      <ambientLight intensity={0.35} />
-      <directionalLight
-        position={[14, 20, 10]}
-        intensity={1.5}
-        castShadow={mode === 'gpu'}
-        shadow-mapSize={[1024, 1024]}
-        shadow-camera-far={70}
-        shadow-camera-left={-25}
-        shadow-camera-right={25}
-        shadow-camera-top={25}
-        shadow-camera-bottom={-25}
-      />
-      <pointLight position={[-12, -6, -10]} intensity={40} color="#4dabf7" />
-      {mode !== 'cpu' && <Cubes count={meshCount} animated={mode === 'gpu'} />}
+      <color attach="background" args={['#05070f']} />
+      {renderScene()}
     </>
   );
 }
